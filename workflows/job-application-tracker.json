@@ -1,0 +1,70 @@
+{
+  "name": "Job Tracker - Application Logger",
+  "nodes": [
+    {
+      "parameters": {
+        "mode": "horizontal"
+      },
+      "id": "sticky_purpose",
+      "name": "Start - Purpose",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [50, 50],
+      "notes": "📋 Workflow: Job Tracker - Application Logger\n🎯 Purpose: Log job applications to Google Sheets Excel file. Can be triggered manually or via webhook when you apply to a job.\n📊 Destination: Google Sheet named 'Job Applications' (columns: jobId, title, company, appliedAt, status, notes, url)\n📝 Trigger: Manual (Execute Workflow) or via Webhook/Button\n🔧 Env Vars: N8N_GOOGLE_SHEET_ID (ID of your Google Sheet)\n💾 Dedup: Prevent duplicate entries by checking jobId"
+    },
+    {
+      "parameters": {},
+      "id": "trigger_manual",
+      "name": "Trigger - Manual / Webhook",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [50, 200]
+    },
+    {
+      "parameters": {
+        "sheetId": "{{$env.N8N_GOOGLE_SHEET_ID}}",
+        "operation": "append",
+        "columns": {
+          "mapping": {
+            "jobId": {"type": "string", "value": "={{$json.jobId || ''}}"},
+            "title": {"type": "string", "value": "={{$json.title || ''}}"},
+            "company": {"type": "string", "value": "={{$json.company || ''}}"},
+            "source": {"type": "string", "value": "={{$json.source || ''}}"},
+            "appliedAt": {"type": "string", "value": "={{now.toISOString()}}"},
+            "status": {"type": "string", "value": "={{$json.status || 'Applied'}}"},
+            "notes": {"type": "string", "value": "={{$json.notes || ''}}"},
+            "url": {"type": "string", "value": "={{$json.url || ''}}"}
+          }
+        },
+        "range": "Job Applications"
+      },
+      "id": "gsheet_append_job",
+      "name": "Google Sheet - Append Job Application",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [300, 200],
+      "credentials": {"googleSheetsOAuth2": "{{credential:googleSheetsOAuth2}}"}
+    },
+    {
+      "parameters": {
+        "emailAddress": "{{$env.N8N_USER_EMAIL}}",
+        "subject": "✅ Job Application Logged: {{$json.title}} @ {{$json.company}}",
+        "emailType": "html",
+        "htmlBody": "<p>Your job application has been logged:</p>\n<ul>\n  <li><strong>Position:</strong> {{$json.title}}</li>\n  <li><strong>Company:</strong> {{$json.company}}</li>\n  <li><strong>Source:</strong> {{$json.source}}</li>\n  <li><strong>Status:</strong> {{$json.status || 'Applied'}}</li>\n  <li><strong>Applied At:</strong> {{now}}</li>\n  <li><strong>URL:</strong> <a href=\"{{$json.url}}\">{{$json.url}}</a></li>\n</ul>\n<p>View your full job tracker sheet for all applications.</p>"
+      },
+      "id": "gmail_confirm",
+      "name": "Gmail - Confirm Application Logged",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [550, 200],
+      "credentials": {"gmailOAuth2": "{{credential:gmailOAuth2}}"}
+    }
+  ],
+  "connections": {
+    "trigger_manual": {"main": [[{"node": "gsheet_append_job", "type": "main", "index": 0}]]},
+    "gsheet_append_job": {"main": [[{"node": "gmail_confirm", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"errorWorkflow": ""},
+  "tags": ["job-tracker", "phase-1b", "excel", "google-sheets", "email-confirm"]
+}

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(ls -la \"/home/noorijlal/Documents/Agentic Workflows/\")",
+      "Read(//home/noorijlal/Documents/Agentic Workflows/**)",
+      "WebFetch(domain:docs.n8n.io)",
+      "WebSearch",
+      "Bash(cat)",
+      "Read(//tmp/**)"
+    ]
+  }
+}

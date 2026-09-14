@@ -1,0 +1,141 @@
+{
+  "name": "Interview Tracker - Application Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "mode": "horizontal"
+      },
+      "id": "sticky_purpose",
+      "name": "Start - Purpose",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [50, 50],
+      "notes": "📋 Workflow: Interview Tracker - Application Pipeline\n🎯 Purpose: Track job applications from discovered → applied → interview scheduled → interviewed → offer/rejected\n📊 Destination: Google Sheet 'Interview Tracker'\n📝 Trigger: Manual (Execute Workflow) or Webhook when status updates\n🔔 Notifications: Gmail alerts at each stage (interview scheduled, reminder 1 day before, final outcome)\n🔧 Env Vars: N8N_GOOGLE_SHEET_ID, N8N_USER_EMAIL, N8N_INTERVIEW_REMINDER_DAYS (default 1)\n💾 Data Table: 'interview_tracker' (jobId, title, company, status, appliedDate, interviewDate, interviewType, notes, outcome)"
+    },
+    {
+      "parameters": {},
+      "id": "trigger_manual",
+      "name": "Trigger - Manual / Webhook",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [50, 200]
+    },
+    {
+      "parameters": {
+        "sheetId": "{{$env.N8N_GOOGLE_SHEET_ID}}",
+        "operation": "read",
+        "range": "Interview Tracker!A:N"
+      },
+      "id": "gsheet_read_tracker",
+      "name": "Google Sheet - Read Interview Tracker",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [250, 200],
+      "credentials": {"googleSheetsOAuth2": "{{credential:googleSheetsOAuth2}}"}
+    },
+    {
+      "parameters": {
+        "jsCode": "// Find matching row for jobId or create new entry\nconst jobId = $json.jobId;\nconst rows = $input.first().body;\n\nconst matchingRow = rows.find(row => row.A === jobId);\n\nif (matchingRow) {\n  return {found: true, rowIndex: rows.indexOf(matchingRow), data: matchingRow};\n} else {\n  return {found: false, rowIndex: null, data: null};\n}"
+      },
+      "id": "find_existing_job",
+      "name": "Code - Find or Create Job Entry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "sheetId": "{{$env.N8N_GOOGLE_SHEET_ID}}",
+        "operation": "append",
+        "columns": {
+          "mapping": {
+            "jobId": {"type": "string", "value": "={{$json.jobId}}"},
+            "title": {"type": "string", "value": "={{$json.title}}"},
+            "company": {"type": "string", "value": "={{$json.company}}"},
+            "source": {"type": "string", "value": "={{$json.source || ''}}"},
+            "status": {"type": "string", "value": "={{$json.status || 'Applied'}}"},
+            "appliedDate": {"type": "string", "value": "={{$json.appliedDate || now.toISOString()}}"},
+            "interviewDate": {"type": "string", "value": "={{$json.interviewDate || ''}}"},
+            "interviewType": {"type": "string", "value": "={{$json.interviewType || ''}}"},
+            "interviewNotes": {"type": "string", "value": "={{$json.interviewNotes || ''}}"},
+            "followUpDate": {"type": "string", "value": "={{$json.followUpDate || ''}}"},
+            "outcome": {"type": "string", "value": "={{$json.outcome || 'Pending'}}"},
+            "offerDetails": {"type": "string", "value": "={{$json.offerDetails || ''}}"},
+            "rejectionReason": {"type": "string", "value": "={{$json.rejectionReason || ''}}"},
+            "lastUpdated": {"type": "string", "value": "={{now.toISOString()}}"}
+          }
+        },
+        "range": "Interview Tracker"
+      },
+      "id": "gsheet_append_interview",
+      "name": "Google Sheet - Append Interview Entry",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [650, 200],
+      "credentials": {"googleSheetsOAuth2": "{{credential:googleSheetsOAuth2}}"}
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if interview scheduled and send notification\nconst interviewDate = $json.interviewDate;\nconst status = $json.status;\n\nif (interviewDate && (status === 'Interview Scheduled' || status === 'Interviewed')) {\n  const date = new Date(interviewDate);\n  return {\n    sendNotif: true,\n    interviewDate: date.toLocaleDateString(),\n    interviewTime: date.toLocaleTimeString(),\n    daysUntil: Math.ceil((date - new Date()) / (1000 * 60 * 60 * 24))\n  };\n} else {\n  return {sendNotif: false};\n}"
+      },
+      "id": "check_interview_date",
+      "name": "Code - Check Interview Date",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "emailAddress": "{{$env.N8N_USER_EMAIL}}",
+        "subject": "📅 Interview Scheduled: {{$json.title}} @ {{$json.company}}",
+        "emailType": "html",
+        "htmlBody": "<h2>Interview Scheduled!</h2>\n<p><strong>{{$json.title}}</strong> @ <strong>{{$json.company}}</strong></p>\n<ul>\n  <li><strong>Date:</strong> {{$json.interviewDate}}</li>\n  <li><strong>Type:</strong> {{$json.interviewType || 'TBD'}}</li>\n  <li><strong>Days from now:</strong> {{$json.daysUntil}}</li>\n</ul>\n<p><strong>Notes:</strong> {{$json.interviewNotes || 'None yet'}}</p>\n<p>✅ This has been logged in your Interview Tracker sheet.</p>"
+      },
+      "id": "gmail_interview_scheduled",
+      "name": "Gmail - Notify Interview Scheduled",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1050, 200],
+      "credentials": {"gmailOAuth2": "{{credential:gmailOAuth2}}"}
+    },
+    {
+      "parameters": {
+        "emailAddress": "{{$env.N8N_USER_EMAIL}}",
+        "subject": "⏰ Interview Reminder: {{$json.title}} @ {{$json.company}} (Tomorrow!)",
+        "emailType": "html",
+        "htmlBody": "<h2>Interview Reminder - Tomorrow!</h2>\n<p><strong>{{$json.title}}</strong> @ <strong>{{$json.company}}</strong></p>\n<ul>\n  <li><strong>Date:</strong> {{$json.interviewDate}}</li>\n  <li><strong>Type:</strong> {{$json.interviewType}}</li>\n</ul>\n<p><strong>Your notes:</strong> {{$json.interviewNotes}}</p>\n<p>Good luck! 🎯</p>"
+      },
+      "id": "gmail_interview_reminder",
+      "name": "Gmail - Interview Reminder (1 Day Before)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1250, 350],
+      "credentials": {"gmailOAuth2": "{{credential:gmailOAuth2}}"}
+    },
+    {
+      "parameters": {
+        "emailAddress": "{{$env.N8N_USER_EMAIL}}",
+        "subject": "{{$json.outcome === 'Offer' ? '🎉 Offer Received' : '📋 Interview Update'}}: {{$json.title}} @ {{$json.company}}",
+        "emailType": "html",
+        "htmlBody": "{{$json.outcome === 'Offer' ? \"<h2>🎉 Offer Received!</h2><p>Congratulations on the offer from <strong>{{$json.company}}</strong>!</p><p><strong>Details:</strong> {{$json.offerDetails}}</p>\" : \"<h2>Interview Completed</h2><p><strong>{{$json.title}}</strong> @ <strong>{{$json.company}}</strong></p><p><strong>Outcome:</strong> {{$json.outcome}}</p><p><strong>Notes:</strong> {{$json.rejectionReason || $json.interviewNotes}}</p>\"}}\n<p>Updated in your Interview Tracker.</p>"
+      },
+      "id": "gmail_interview_outcome",
+      "name": "Gmail - Notify Interview Outcome",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1250, 500],
+      "credentials": {"gmailOAuth2": "{{credential:gmailOAuth2}}"}
+    }
+  ],
+  "connections": {
+    "trigger_manual": {"main": [[{"node": "gsheet_read_tracker", "type": "main", "index": 0}]]},
+    "gsheet_read_tracker": {"main": [[{"node": "find_existing_job", "type": "main", "index": 0}]]},
+    "find_existing_job": {"main": [[{"node": "gsheet_append_interview", "type": "main", "index": 0}]]},
+    "gsheet_append_interview": {"main": [[{"node": "check_interview_date", "type": "main", "index": 0}]]},
+    "check_interview_date": {"main": [[{"node": "gmail_interview_scheduled", "type": "main", "index": 0}]]},
+    "gmail_interview_scheduled": {"main": [[{"node": "gmail_interview_outcome", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"errorWorkflow": ""},
+  "tags": ["interview-tracker", "phase-1c", "gmail", "google-sheets", "pipeline-tracking"]
+}

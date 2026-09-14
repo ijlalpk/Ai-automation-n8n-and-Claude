@@ -1,0 +1,205 @@
+{
+  "name": "Job Finder - Remote Cloud Discovery",
+  "nodes": [
+    {
+      "parameters": {
+        "mode": "horizontal"
+      },
+      "id": "a0c65a27-5555-4155-8888-aabbccddee00",
+      "name": "Start - Purpose",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [50, 50],
+      "notes": "📋 Workflow: Job Finder - Remote Cloud Discovery\n🎯 Purpose: Discover new remote cloud/DevOps entry-level roles, filter for keywords, deduplicate, and notify via WhatsApp + Gmail\n⏰ Schedule: Every 6 hours\n📡 Sources: Remotive, RemoteOK, Arbeitnow APIs\n💾 Dedup: n8n Data Table 'remote_job_finder_seen_jobs'\n📲 Notify: WhatsApp (Twilio Sandbox) + Gmail digest\n🔧 Env Vars: N8N_USER_WHATSAPP_NUMBER, N8N_USER_EMAIL"
+    },
+    {
+      "parameters": {
+        "rule": {"interval": [{"type": "hours", "value": 6}]}
+      },
+      "id": "trigger_schedule",
+      "name": "Schedule - Every 6 Hours",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [50, 200],
+      "disabled": false
+    },
+    {
+      "parameters": {
+        "url": "https://remotive.com/api/remote-jobs",
+        "sendBody": false,
+        "options": {}
+      },
+      "id": "fetch_remotive",
+      "name": "Fetch - Remotive",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 100],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "https://remoteok.com/api",
+        "sendBody": false,
+        "options": {},
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+      },
+      "id": "fetch_remoteok",
+      "name": "Fetch - RemoteOK",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "https://arbeitnow.com/api/job-board-api",
+        "sendBody": false,
+        "options": {}
+      },
+      "id": "fetch_arbeitnow",
+      "name": "Fetch - Arbeitnow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const jobs = $input.first().body.jobs || [];\nreturn jobs.map(job => ({\n  jobId: `remotive_${job.id}`,\n  source: 'Remotive',\n  title: job.title,\n  company: job.company_name,\n  url: job.url,\n  description: job.description || '',\n  isRemote: true,\n  postedAt: new Date(job.publication_date).toISOString()\n}));"
+      },
+      "id": "normalize_remotive",
+      "name": "Normalize - Remotive",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const jobs = Array.isArray($input.first().body) ? $input.first().body : [];\nreturn jobs.slice(1).map(job => ({\n  jobId: `remoteok_${job.id || job.slug}`,\n  source: 'RemoteOK',\n  title: job.position,\n  company: job.company,\n  url: job.url,\n  description: job.description || '',\n  isRemote: true,\n  postedAt: new Date(job.epoch * 1000).toISOString()\n}));"
+      },
+      "id": "normalize_remoteok",
+      "name": "Normalize - RemoteOK",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const jobs = $input.first().body.data || [];\nreturn jobs.map(job => ({\n  jobId: `arbeitnow_${job.slug}`,\n  source: 'Arbeitnow',\n  title: job.title,\n  company: job.company_name,\n  url: job.url,\n  description: job.description || '',\n  isRemote: !!job.remote,\n  postedAt: new Date(job.created_at).toISOString()\n}));"
+      },
+      "id": "normalize_arbeitnow",
+      "name": "Normalize - Arbeitnow",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {"mode": "append", "dataType": "auto"},
+      "id": "merge_all_sources",
+      "name": "Merge - Combine All Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const KEYWORD_INCLUDE = ['cloud engineer', 'associate cloud engineer', 'cloud support engineer', 'devops engineer', 'site reliability engineer', 'cloud infrastructure engineer', 'cloud engineer intern', 'entry level', 'junior', 'associate', 'junior cloud', 'junior devops', 'sre', 'associate devops', 'associate infrastructure', 'aws', 'azure', 'gcp', 'kubernetes', 'docker'];\nconst KEYWORD_EXCLUDE = ['senior', 'staff', 'principal', 'lead', 'manager', 'director', 'head of', 'chief', 'vp ', 'vice president', 'architect'];\nconst jobs = $input.first().json;\nreturn jobs.filter(job => {\n  if (!job.isRemote) return false;\n  const titleLower = (job.title || '').toLowerCase();\n  const descLower = (job.description || '').toLowerCase();\n  const searchText = titleLower + ' ' + descLower;\n  const hasInclude = KEYWORD_INCLUDE.some(kw => searchText.includes(kw));\n  if (!hasInclude) return false;\n  const hasExclude = KEYWORD_EXCLUDE.some(kw => searchText.includes(kw));\n  if (hasExclude) return false;\n  return true;\n});"
+      },
+      "id": "filter_cloud_devops",
+      "name": "Filter - Remote + Cloud/DevOps Keyword Match",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {"operation": "getAll", "table": "remote_job_finder_seen_jobs"},
+      "id": "datatable_get_seen",
+      "name": "Data Table - Get - All Seen Jobs",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [1050, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const filteredJobs = $input.first().json;\nconst seenRows = $input.last().json;\nconst seenIds = new Set(seenRows.map(row => row.jobId));\nreturn filteredJobs.filter(job => !seenIds.has(job.jobId));"
+      },
+      "id": "dedup_new_jobs",
+      "name": "Code - Dedup - Keep Only New Jobs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "fromFieldValue": "whatsapp:+14155238886",
+        "toFieldValue": "whatsapp:{{$env.N8N_USER_WHATSAPP_NUMBER}}",
+        "messageSource": "define",
+        "message": "🆕 New Remote Job Match!\n\n*{{$json.title}}* @ {{$json.company}}\n\n📍 Source: {{$json.source}}\n🔗 Apply: {{$json.url}}",
+        "resource": "message",
+        "options": {}
+      },
+      "id": "twilio_send_whatsapp",
+      "name": "Twilio - Send WhatsApp Notification",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 2,
+      "position": [1250, 200],
+      "credentials": {"twilioApi": "{{credential:twilioApi}}"}
+    },
+    {
+      "parameters": {
+        "subject": "🆕 New Remote Cloud/DevOps Jobs Found",
+        "emailAddress": "{{$env.N8N_USER_EMAIL}}",
+        "emailType": "html",
+        "htmlBody": "<h2>New Remote Cloud/DevOps Job Matches</h2>\n<p>Found <strong>{{$json.length}}</strong> new job(s) matching your criteria.</p>\n<ul>\n{{#each $json}}\n  <li><strong>{{this.title}}</strong> @ {{this.company}} ({{this.source}})<br/><a href=\"{{this.url}}\">Apply here</a></li>\n{{/each}}\n</ul>\n<p>Check your full job tracker in the Excel sheet for details.</p>"
+      },
+      "id": "gmail_send_digest",
+      "name": "Gmail - Send Job Digest",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1250, 350],
+      "credentials": {"gmailOAuth2": "{{credential:gmailOAuth2}}"}
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "remote_job_finder_seen_jobs",
+        "columns": {
+          "mapping": {
+            "jobId": {"type": "string", "value": "=jsonata($json.jobId)"},
+            "source": {"type": "string", "value": "=jsonata($json.source)"},
+            "title": {"type": "string", "value": "=jsonata($json.title)"},
+            "company": {"type": "string", "value": "=jsonata($json.company)"},
+            "url": {"type": "string", "value": "=jsonata($json.url)"},
+            "firstSeenAt": {"type": "string", "value": "={{now.toISOString()}}"}
+          }
+        }
+      },
+      "id": "datatable_mark_seen",
+      "name": "Data Table - Insert - Mark Seen",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    }
+  ],
+  "connections": {
+    "trigger_schedule": {"main": [[{"node": "fetch_remotive", "type": "main", "index": 0}, {"node": "fetch_remoteok", "type": "main", "index": 0}, {"node": "fetch_arbeitnow", "type": "main", "index": 0}]]},
+    "fetch_remotive": {"main": [[{"node": "normalize_remotive", "type": "main", "index": 0}]]},
+    "fetch_remoteok": {"main": [[{"node": "normalize_remoteok", "type": "main", "index": 0}]]},
+    "fetch_arbeitnow": {"main": [[{"node": "normalize_arbeitnow", "type": "main", "index": 0}]]},
+    "normalize_remotive": {"main": [[{"node": "merge_all_sources", "type": "main", "index": 0}]]},
+    "normalize_remoteok": {"main": [[{"node": "merge_all_sources", "type": "main", "index": 1}]]},
+    "normalize_arbeitnow": {"main": [[{"node": "merge_all_sources", "type": "main", "index": 2}]]},
+    "merge_all_sources": {"main": [[{"node": "filter_cloud_devops", "type": "main", "index": 0}]]},
+    "filter_cloud_devops": {"main": [[{"node": "datatable_get_seen", "type": "main", "index": 0}]]},
+    "datatable_get_seen": {"main": [[{"node": "dedup_new_jobs", "type": "main", "index": 0}]]},
+    "filter_cloud_devops": {"main": [[{"node": "dedup_new_jobs", "type": "main", "index": 1}]]},
+    "dedup_new_jobs": {"main": [[{"node": "twilio_send_whatsapp", "type": "main", "index": 0}, {"node": "gmail_send_digest", "type": "main", "index": 0}]]},
+    "twilio_send_whatsapp": {"main": [[{"node": "datatable_mark_seen", "type": "main", "index": 0}]]},
+    "gmail_send_digest": {"main": [[{"node": "datatable_mark_seen", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"errorWorkflow": ""},
+  "tags": ["job-finder", "phase-1b", "whatsapp", "gmail", "remote-jobs", "cloud-devops"]
+}
