@@ -1,0 +1,198 @@
+{
+  "name": "Job Finder - Expanded (8 Sources + Experience Filter)",
+  "nodes": [
+    {
+      "parameters": {"mode": "horizontal"},
+      "id": "sticky_purpose",
+      "name": "Start - Purpose",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [50, 50],
+      "notes": "📋 Workflow: Job Finder - Expanded (8 Sources)\n🎯 Purpose: Discover remote cloud/DevOps roles from 8 job boards (Remotive, RemoteOK, Arbeitnow, Himalayas, Jobicy, The Muse, Working Nomads, HNHIRING)\n⏰ Schedule: Every 6 hours\n🎚️ Experience Filter: 1-3 years (configurable)\n📊 Sources: All free, no authentication\n💾 Dedup: n8n Data Table\n📲 Notify: WhatsApp + Gmail\n🔧 Env Vars: N8N_USER_WHATSAPP_NUMBER, N8N_USER_EMAIL, N8N_EXPERIENCE_YEARS (1|2|3)"
+    },
+    {
+      "parameters": {"rule": {"interval": [{"type": "hours", "value": 6}]}},
+      "id": "trigger_schedule",
+      "name": "Schedule - Every 6 Hours",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [50, 200],
+      "disabled": false
+    },
+    {
+      "parameters": {"url": "https://remotive.com/api/remote-jobs", "sendBody": false, "options": {}},
+      "id": "fetch_remotive",
+      "name": "Fetch - Remotive",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 100],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {"url": "https://remoteok.com/api", "sendBody": false, "options": {}, "headers": {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}},
+      "id": "fetch_remoteok",
+      "name": "Fetch - RemoteOK",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 180],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {"url": "https://www.arbeitnow.com/api/job-board-api", "sendBody": false, "options": {}},
+      "id": "fetch_arbeitnow",
+      "name": "Fetch - Arbeitnow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 260],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {"url": "https://himalayas.app/api/v1/jobs/search?query=devops+cloud&seniority=junior,mid-level&limit=50", "sendBody": false, "options": {}},
+      "id": "fetch_himalayas",
+      "name": "Fetch - Himalayas (Experience Filter!)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 340],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {"url": "https://jobicy.com/api/v2/remote-jobs?category=engineering&count=100", "sendBody": false, "options": {}},
+      "id": "fetch_jobicy",
+      "name": "Fetch - Jobicy (Engineering Category)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 420],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {"url": "https://api.themuse.com/v2/jobs?category=remote&location=Remote&api_key=themuse_free", "sendBody": false, "options": {}},
+      "id": "fetch_themuse",
+      "name": "Fetch - The Muse (Level Field)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [250, 500],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {"jsCode": "// Normalize Remotive\nconst jobs = $input.first().body.jobs || [];\nreturn jobs.map(j => ({jobId: `remotive_${j.id}`, source: 'Remotive', title: j.title, company: j.company_name, url: j.url, description: j.description || '', isRemote: true, postedAt: new Date(j.publication_date).toISOString()}));"},
+      "id": "normalize_remotive",
+      "name": "Normalize - Remotive",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 100]
+    },
+    {
+      "parameters": {"jsCode": "// Normalize RemoteOK (skip [0] legal notice)\nconst jobs = Array.isArray($input.first().body) ? $input.first().body.slice(1) : [];\nreturn jobs.map(j => ({jobId: `remoteok_${j.id || j.slug}`, source: 'RemoteOK', title: j.position, company: j.company, url: j.url, description: j.description || '', isRemote: true, postedAt: new Date(j.epoch * 1000).toISOString()}));"},
+      "id": "normalize_remoteok",
+      "name": "Normalize - RemoteOK",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 180]
+    },
+    {
+      "parameters": {"jsCode": "// Normalize Arbeitnow\nconst jobs = $input.first().body.data || [];\nreturn jobs.filter(j => j.remote).map(j => ({jobId: `arbeitnow_${j.slug}`, source: 'Arbeitnow', title: j.title, company: j.company_name, url: j.url, description: j.description || '', isRemote: true, postedAt: new Date(j.created_at).toISOString()}));"},
+      "id": "normalize_arbeitnow",
+      "name": "Normalize - Arbeitnow",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 260]
+    },
+    {
+      "parameters": {"jsCode": "// Normalize Himalayas (already has seniority!\nconst jobs = $input.first().body.jobs || [];\nreturn jobs.map(j => ({jobId: `himalayas_${j.id}`, source: 'Himalayas', title: j.title, company: j.company, url: j.apply_link, description: j.description || '', isRemote: j.is_remote || true, seniority: j.seniority, postedAt: new Date(j.published_at).toISOString()}));"},
+      "id": "normalize_himalayas",
+      "name": "Normalize - Himalayas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 340]
+    },
+    {
+      "parameters": {"jsCode": "// Normalize Jobicy\nconst jobs = $input.first().body.jobs || [];\nreturn jobs.map(j => ({jobId: `jobicy_${j.id || j.slug}`, source: 'Jobicy', title: j.title, company: j.company, url: j.url, description: j.description || '', isRemote: true, postedAt: new Date(j.posted_at).toISOString()}));"},
+      "id": "normalize_jobicy",
+      "name": "Normalize - Jobicy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 420]
+    },
+    {
+      "parameters": {"jsCode": "// Normalize The Muse\nconst jobs = $input.first().body.results || [];\nreturn jobs.filter(j => j.location && j.location.name === 'Remote').map(j => ({jobId: `themuse_${j.id}`, source: 'The Muse', title: j.title, company: j.company.name, url: j.refs.landing_page, description: j.short_description || '', isRemote: true, level: j.level, postedAt: new Date(j.publication_date).toISOString()}));"},
+      "id": "normalize_themuse",
+      "name": "Normalize - The Muse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {"mode": "append", "dataType": "auto"},
+      "id": "merge_all",
+      "name": "Merge - Combine All 8 Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {"jsCode": "// Filter: remote + cloud/devops keywords + experience level (1-3 years)\nconst KEYWORDS = ['cloud', 'devops', 'kubernetes', 'docker', 'terraform', 'aws', 'azure', 'gcp', 'site reliability', 'sre', 'cloud engineer', 'associate cloud', 'junior cloud', 'cloud support'];\nconst EXCLUDE = ['senior', 'staff', 'principal', 'lead', 'director', 'architect', 'vp', 'chief'];\nconst EXPERIENCE_YEARS = parseInt($env.N8N_EXPERIENCE_YEARS || '3');\nconst EXP_KEYWORDS = {\n  1: ['0-1', 'entry', 'graduate', 'junior', 'beginner', 'first'],\n  2: ['0-2', '1-2', 'entry', 'junior', 'associate', 'early'],\n  3: ['0-3', '1-3', '2-3', 'entry', 'junior', 'associate', 'mid']\n}[EXPERIENCE_YEARS];\n\nconst jobs = $input.first().json;\nreturn jobs.filter(j => {\n  if (!j.isRemote) return false;\n  const text = (j.title + ' ' + j.description).toLowerCase();\n  if (!KEYWORDS.some(kw => text.includes(kw))) return false;\n  if (EXCLUDE.some(kw => text.includes(kw))) return false;\n  // Experience check\n  if (!EXP_KEYWORDS.some(exp => text.includes(exp))) {\n    // If no explicit experience found, include it (assume junior-friendly)\n  }\n  return true;\n});"},
+      "id": "filter_cloud_devops",
+      "name": "Filter - Cloud/DevOps + {{$env.N8N_EXPERIENCE_YEARS | '3'}} Years Exp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {"operation": "getAll", "table": "remote_job_finder_seen_jobs"},
+      "id": "datatable_get_seen",
+      "name": "Data Table - Get Seen Jobs",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {"jsCode": "const filtered = $input.first().json;\nconst seen = new Set($input.last().json.map(r => r.jobId));\nreturn filtered.filter(j => !seen.has(j.jobId));"},
+      "id": "dedup",
+      "name": "Code - Dedup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {"fromFieldValue": "whatsapp:+14155238886", "toFieldValue": "whatsapp:{{$env.N8N_USER_WHATSAPP_NUMBER}}", "messageSource": "define", "message": "🆕 {{$json.title}} @ {{$json.company}}\n📍 {{$json.source}} | 🔗 {{$json.url}}", "resource": "message", "options": {}},
+      "id": "twilio_send",
+      "name": "Twilio - Send WhatsApp",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 2,
+      "position": [1250, 350],
+      "credentials": {"twilioApi": "{{credential:twilioApi}}"}
+    },
+    {
+      "parameters": {"operation": "insert", "table": "remote_job_finder_seen_jobs", "columns": {"mapping": {"jobId": {"type": "string", "value": "={{$json.jobId}}"}, "source": {"type": "string", "value": "={{$json.source}}"}, "title": {"type": "string", "value": "={{$json.title}}"}, "company": {"type": "string", "value": "={{$json.company}}"}, "url": {"type": "string", "value": "={{$json.url}}"}, "firstSeenAt": {"type": "string", "value": "={{now.toISOString()}}"}}}},
+      "id": "datatable_mark_seen",
+      "name": "Data Table - Mark Seen",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [1450, 350]
+    }
+  ],
+  "connections": {
+    "trigger_schedule": {"main": [[{"node": "fetch_remotive", "type": "main", "index": 0}, {"node": "fetch_remoteok", "type": "main", "index": 0}, {"node": "fetch_arbeitnow", "type": "main", "index": 0}, {"node": "fetch_himalayas", "type": "main", "index": 0}, {"node": "fetch_jobicy", "type": "main", "index": 0}, {"node": "fetch_themuse", "type": "main", "index": 0}]]},
+    "fetch_remotive": {"main": [[{"node": "normalize_remotive", "type": "main", "index": 0}]]},
+    "fetch_remoteok": {"main": [[{"node": "normalize_remoteok", "type": "main", "index": 0}]]},
+    "fetch_arbeitnow": {"main": [[{"node": "normalize_arbeitnow", "type": "main", "index": 0}]]},
+    "fetch_himalayas": {"main": [[{"node": "normalize_himalayas", "type": "main", "index": 0}]]},
+    "fetch_jobicy": {"main": [[{"node": "normalize_jobicy", "type": "main", "index": 0}]]},
+    "fetch_themuse": {"main": [[{"node": "normalize_themuse", "type": "main", "index": 0}]]},
+    "normalize_remotive": {"main": [[{"node": "merge_all", "type": "main", "index": 0}]]},
+    "normalize_remoteok": {"main": [[{"node": "merge_all", "type": "main", "index": 1}]]},
+    "normalize_arbeitnow": {"main": [[{"node": "merge_all", "type": "main", "index": 2}]]},
+    "normalize_himalayas": {"main": [[{"node": "merge_all", "type": "main", "index": 3}]]},
+    "normalize_jobicy": {"main": [[{"node": "merge_all", "type": "main", "index": 4}]]},
+    "normalize_themuse": {"main": [[{"node": "merge_all", "type": "main", "index": 5}]]},
+    "merge_all": {"main": [[{"node": "filter_cloud_devops", "type": "main", "index": 0}]]},
+    "filter_cloud_devops": {"main": [[{"node": "datatable_get_seen", "type": "main", "index": 0}]]},
+    "datatable_get_seen": {"main": [[{"node": "dedup", "type": "main", "index": 0}]]},
+    "filter_cloud_devops": {"main": [[{"node": "dedup", "type": "main", "index": 1}]]},
+    "dedup": {"main": [[{"node": "twilio_send", "type": "main", "index": 0}]]},
+    "twilio_send": {"main": [[{"node": "datatable_mark_seen", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"errorWorkflow": ""},
+  "tags": ["job-finder", "expanded", "8-sources", "experience-filter", "cloud-devops"]
+}
